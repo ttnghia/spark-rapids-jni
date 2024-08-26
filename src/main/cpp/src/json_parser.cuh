@@ -86,6 +86,9 @@ enum class json_token : int8_t {
   // e.g.: key1 in {"key1" : "value1"}
   FIELD_NAME,
 
+  // value as string without modification
+  VALUE_STRING_VERBATIM,
+
   // e.g.: value1 in {"key1" : "value1"}
   VALUE_STRING,
 
@@ -220,7 +223,11 @@ class char_range_reader {
 class json_parser {
  public:
   __device__ inline explicit json_parser(char_range _chars)
-    : chars(_chars), curr_pos(0), current_token(json_token::INIT), max_depth_exceeded(false)
+    : chars(_chars),
+      curr_pos(0),
+      current_token(json_token::INIT),
+      max_depth_exceeded(false),
+      output_value_as_string_verbatim(false)
   {
   }
 
@@ -388,7 +395,13 @@ class json_parser {
         break;
       case '"':
         // fall through
-      case '\'': parse_string_and_set_current(); break;
+      case '\'':
+        if (output_value_as_string_verbatim) {
+          parse_value_as_string_verbatim();
+        } else {
+          parse_string_and_set_current();
+        }
+        break;
       case 't':
         curr_pos++;
         parse_true_and_set_current();
@@ -401,7 +414,13 @@ class json_parser {
         curr_pos++;
         parse_null_and_set_current();
         break;
-      default: parse_number_and_set_current(); break;
+      default:
+        if (output_value_as_string_verbatim) {
+          parse_value_as_string_verbatim();
+        } else {
+          parse_number_and_set_current();
+        }
+        break;
     }
   }
 
@@ -1306,6 +1325,34 @@ class json_parser {
     }
   }
 
+  __device__ inline void parse_value_as_string_verbatim()
+  {
+    char_range_reader reader(chars, curr_pos);
+    auto const is_quoted  = reader.current_char() == '"' || reader.current_char() == '\'';
+    auto const quote_char = is_quoted ? reader.current_char() : '\0';
+    bool success{false};
+    while (!reader.eof()) {
+      auto const c = reader.current_char();
+      if (is_quoted) {
+        if (c == quote_char) {
+          success = true;
+          break;
+        }
+      } else if (c == ',' || c == '}' || c == ']') {  // end of non-quoted value (a number)
+        success = true;
+        break;
+      }
+      reader.next();
+    }
+
+    if (success) {
+      curr_pos      = reader.pos();
+      current_token = json_token::VALUE_STRING_VERBATIM;
+    } else {
+      set_current_error();
+    }
+  }
+
  public:
   /**
    * continute parsing, get next token.
@@ -1374,6 +1421,11 @@ class json_parser {
   __device__ cudf::size_type write_unescaped_text(char* destination) const
   {
     switch (current_token) {
+      case json_token::VALUE_STRING_VERBATIM: {
+        auto const num_copy = curr_pos - current_token_start_pos;
+        memcpy(destination, chars.data() + current_token_start_pos, num_copy);
+        return num_copy;
+      }
       case json_token::VALUE_STRING: {
         // can not copy from JSON directly due to escaped chars
         // rewind the pos; parse again with copy
@@ -1650,6 +1702,11 @@ class json_parser {
 
   __device__ inline bool max_nesting_depth_exceeded() const { return max_depth_exceeded; }
 
+  __device__ inline void set_output_value_as_string_verbatim(bool state)
+  {
+    output_value_as_string_verbatim = state;
+  }
+
  private:
   char_range const chars;
   cudf::size_type curr_pos;
@@ -1672,6 +1729,9 @@ class json_parser {
 
   // Error check if the maximum nesting depth has been reached.
   bool max_depth_exceeded;
+
+  // Output strings or numbers exactly as given in the input (strings will have quotes).
+  bool output_value_as_string_verbatim;
 };
 
 }  // namespace spark_rapids_jni

@@ -423,8 +423,9 @@ __device__ thrust::pair<bool, cudf::size_type> evaluate_path(
     if (!ctx.task_is_done) {
       // case (VALUE_STRING, Nil) if style == RawStyle
       // case path 1
-      if (json_token::VALUE_STRING == ctx.token && path_is_empty(ctx.path.size()) &&
-          ctx.style == write_style::RAW) {
+      if ((json_token::VALUE_STRING == ctx.token ||
+           json_token::VALUE_STRING_VERBATIM == ctx.token) &&
+          path_is_empty(ctx.path.size()) && ctx.style == write_style::RAW) {
         // there is no array wildcard or slice parent, emit this string without
         // quotes write current string in parser to generator
         ctx.g.write_raw(p, out_buf);
