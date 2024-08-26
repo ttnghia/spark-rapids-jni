@@ -414,10 +414,8 @@ class json_parser {
   {
     // TODO eventually chars should be a reader so we can just pass it in...
     char_range_reader reader(chars, curr_pos);
-    auto [success, end_char_pos] = try_parse_string(reader);
-    if (success) {
-      // TODO remove end_char_pos, and just get it from the reader...
-      curr_pos      = end_char_pos;
+    if (try_parse_string(reader)) {
+      curr_pos      = reader.pos();
       current_token = json_token::VALUE_STRING;
     } else {
       set_current_error();
@@ -608,24 +606,16 @@ class json_parser {
    *     : ~ ["\\\u0000-\u001F]
    *     ;
    *
-   * @param str string to parse
-   * @param to_match expected match str
-   * @param w_style the escape style for writing.
-   * @return a pair of success and length, where success is true if the string
-   * is valid and length is the number of bytes needed to encode the string
-   * in the given style.
+   * @param str input string to parse
+   * @param to_match if given then this is what the input should be matched exactly
+   * @return a boolean value indicating if the string is valid, and matches with `to_match` if that
+   * string is given
    */
-  static __device__ inline std::pair<bool, cudf::size_type> try_parse_string(
-    char_range_reader& str,
-    char_range_reader to_match = char_range_reader(char_range::null()),
-    escape_style w_style       = escape_style::UNESCAPED)
+  static __device__ inline bool try_parse_string(
+    char_range_reader& str, char_range_reader to_match = char_range_reader(char_range::null()))
   {
-    if (str.eof()) { return std::make_pair(false, 0); }
+    if (str.eof()) { return false; }
     char const quote_char = str.current_char();
-    int output_size_bytes = 0;
-
-    // write the first " if write style is escaped
-    if (escape_style::ESCAPED == w_style) { output_size_bytes++; }
 
     // skip left quote char
     // We don't need to actually verify what it is, because we just read it.
@@ -633,56 +623,33 @@ class json_parser {
 
     // scan string content
     while (!str.eof()) {
-      char c = str.current_char();
-      int v  = static_cast<int>(c);
-      if (c == quote_char) {
-        // path 1: match closing quote char
+      auto const c = str.current_char();
+      auto const v = static_cast<int>(c);
+      if (c == quote_char) {  // path 1: match closing quote char
         str.next();
-
         // match check, the last char in match_str is quote_char
-        if (!to_match.is_null() && !to_match.eof()) { return std::make_pair(false, 0); }
-
-        // write the end " if write style is escaped
-        if (escape_style::ESCAPED == w_style) { output_size_bytes++; }
-
-        return std::make_pair(true, str.pos());
-      } else if (v >= 0 && v < 32) {
-        // path 2: unescaped control char
-
-        // copy if enabled, escape mode, write more chars
-        if (escape_style::ESCAPED == w_style) {
-          int escape_chars = escape_char(str.current_char(), nullptr);
-          output_size_bytes += (escape_chars - 1);
-        }
-
+        if (!to_match.is_null() && !to_match.eof()) { return false; }
+        return true;
+      } else if (v >= 0 && v < 32) {  // path 2: unescaped control char
         // check match if enabled
-        if (!try_match_char(to_match, str.current_char())) { return std::make_pair(false, 0); }
-
+        if (!try_match_char(to_match, str.current_char())) { return false; }
         str.next();
-        output_size_bytes++;
-        continue;
-      } else if ('\\' == c) {
-        // path 3: escape path
+      } else if ('\\' == c) {  // path 3: escape path
         str.next();
         char* copy_dest_nullptr = nullptr;
-        if (!try_skip_escape_part(str, to_match, copy_dest_nullptr, w_style, output_size_bytes)) {
-          return std::make_pair(false, 0);
+        int output_size_bytes   = 0;
+        if (!try_skip_escape_part(
+              str, to_match, copy_dest_nullptr, escape_style::UNESCAPED, output_size_bytes)) {
+          return false;
         }
-      } else {
-        // path 4: safe code point
-
-        // handle single unescaped " char; happens when string is quoted by char '
-        // e.g.:  'A"' string, escape to "A\\"" (5 chars: " A \ " ")
-        if ('\"' == c && escape_style::ESCAPED == w_style) { output_size_bytes++; }
-
-        if (!try_skip_safe_code_point(str, c)) { return std::make_pair(false, 0); }
+      } else {  // path 4: safe code point
+        if (!try_skip_safe_code_point(str, c)) { return false; }
         // check match if enabled
-        if (!try_match_char(to_match, c)) { return std::make_pair(false, 0); }
-        output_size_bytes++;
+        if (!try_match_char(to_match, c)) { return false; }
       }
     }
 
-    return std::make_pair(false, 0);
+    return false;
   }
 
   static __device__ inline bool try_match_char(char_range_reader& reader, char c)
@@ -1214,11 +1181,9 @@ class json_parser {
   {
     // TODO eventually chars should be a reader so we can just pass it in...
     char_range_reader reader(chars, curr_pos);
-    current_token_start_pos      = curr_pos;
-    auto [success, end_char_pos] = try_parse_string(reader);
-    if (success) {
-      // TODO remove end_char_pos, and just get it from the reader...
-      curr_pos      = end_char_pos;
+    current_token_start_pos = curr_pos;
+    if (try_parse_string(reader)) {
+      curr_pos      = reader.pos();
       current_token = json_token::FIELD_NAME;
     } else {
       set_current_error();
@@ -1591,8 +1556,7 @@ class json_parser {
     if (json_token::FIELD_NAME == current_token) {
       char_range_reader reader(current_range());
       char_range_reader to_match(name);
-      auto [b, end_pos] = try_parse_string(reader, to_match, escape_style::UNESCAPED);
-      return b;
+      return try_parse_string(reader, to_match);
     } else {
       return false;
     }
