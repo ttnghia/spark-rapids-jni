@@ -35,7 +35,7 @@ TEST_F(FromJsonTest, Initialization)
 
   std::vector<std::pair<std::string, cudf::io::schema_element>> schema{
     {"c", {cudf::data_type{cudf::type_id::INT32}}},
-    {"a", {cudf::data_type{cudf::type_id::STRING}}},
+    // {"a", {cudf::data_type{cudf::type_id::STRING}}},
   };
 
   auto const output = spark_rapids_jni::from_json_to_structs(

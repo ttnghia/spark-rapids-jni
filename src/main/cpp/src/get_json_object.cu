@@ -431,6 +431,9 @@ __device__ thrust::pair<bool, cudf::size_type> evaluate_path(
         ctx.g.write_raw(p, out_buf);
         ctx.dirty        = 1;
         ctx.task_is_done = true;
+
+        printf("line %d\n", __LINE__);
+
       }
       // case (START_ARRAY, Nil) if style == FlattenStyle
       // case path 2

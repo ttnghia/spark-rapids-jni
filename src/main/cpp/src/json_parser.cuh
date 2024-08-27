@@ -1333,8 +1333,11 @@ class json_parser {
     bool success{false};
     while (!reader.eof()) {
       auto const c = reader.current_char();
+      printf("char: %c\n", c);
+
       if (is_quoted) {
         if (c == quote_char) {
+          reader.next();
           success = true;
           break;
         }
@@ -1346,6 +1349,8 @@ class json_parser {
     }
 
     if (success) {
+      printf("success \n");
+
       curr_pos      = reader.pos();
       current_token = json_token::VALUE_STRING_VERBATIM;
     } else {
@@ -1424,6 +1429,8 @@ class json_parser {
       case json_token::VALUE_STRING_VERBATIM: {
         auto const num_copy = curr_pos - current_token_start_pos;
         memcpy(destination, chars.data() + current_token_start_pos, num_copy);
+        printf("line %d, size = %d\n", __LINE__, num_copy);
+
         return num_copy;
       }
       case json_token::VALUE_STRING: {
