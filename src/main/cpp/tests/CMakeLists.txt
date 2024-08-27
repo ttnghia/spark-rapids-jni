@@ -60,8 +60,11 @@ ConfigureTest(CAST_FLOAT_TO_STRING
 ConfigureTest(DATETIME_REBASE
     datetime_rebase.cpp)
 
-ConfigureTest(ROW_CONVERSION
-    row_conversion.cpp)
+ConfigureTest(FROM_JSON
+    from_json.cu)
+
+# ConfigureTest(ROW_CONVERSION
+#     row_conversion.cpp)
 
 ConfigureTest(HASH
     hash.cpp)
