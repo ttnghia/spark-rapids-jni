@@ -222,12 +222,12 @@ class char_range_reader {
  */
 class json_parser {
  public:
-  __device__ inline explicit json_parser(char_range _chars)
+  __device__ inline explicit json_parser(char_range _chars, bool _output_as_string_verbatim)
     : chars(_chars),
       curr_pos(0),
       current_token(json_token::INIT),
       max_depth_exceeded(false),
-      output_value_as_string_verbatim(false)
+      output_value_as_string_verbatim(_output_as_string_verbatim)
   {
   }
 
@@ -1702,11 +1702,6 @@ class json_parser {
 
   __device__ inline bool max_nesting_depth_exceeded() const { return max_depth_exceeded; }
 
-  __device__ inline void set_output_value_as_string_verbatim(bool state)
-  {
-    output_value_as_string_verbatim = state;
-  }
-
  private:
   char_range const chars;
   cudf::size_type curr_pos;
@@ -1731,7 +1726,7 @@ class json_parser {
   bool max_depth_exceeded;
 
   // Output strings or numbers exactly as given in the input (strings will have quotes).
-  bool output_value_as_string_verbatim;
+  bool const output_value_as_string_verbatim;
 };
 
 }  // namespace spark_rapids_jni
